@@ -1,0 +1,4 @@
+resource_group_name  = "terraform-state-rg"
+location           = "westeurope"
+storage_account_name = "tfstateaccount"
+key_vault_name     = "tfstate-kv" 

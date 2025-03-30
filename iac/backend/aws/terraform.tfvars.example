@@ -1,0 +1,3 @@
+aws_region         = "eu-west-1"
+state_bucket_name  = "my-terraform-state-bucket"
+dynamodb_table_name = "my-terraform-locks" 
