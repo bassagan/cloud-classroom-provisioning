@@ -191,12 +191,6 @@ resource "azuread_application_password" "classroom_secret" {
   end_date       = "2099-01-01T01:02:03Z"
 }
 
-# Grant admin consent for User.ReadWrite.All
-resource "azuread_app_role_assignment" "user_read_write" {
-  app_role_id         = "62a82d76-70ea-41e2-9197-370581804d09"
-  principal_object_id = azuread_service_principal.classroom_sp.object_id
-  resource_object_id  = data.azuread_service_principal.msgraph.object_id
-}
 
 # Add outputs
 output "client_id" {
