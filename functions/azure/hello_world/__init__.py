@@ -106,9 +106,7 @@ class ClassroomManager:
             "CosmosDBUser",
             "CICDUser",
             "ResourceGroupUser",
-            "ServicePrincipalRole",
             "StudentConsoleUser",
-            "StudentServicePrincipalRole"
         ]
         
         assignments = []
