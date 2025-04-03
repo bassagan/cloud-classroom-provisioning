@@ -89,7 +89,7 @@ class ClassroomManager:
             logger.info(f"Graph client: {self.graph_client}")
             created_user = await self.graph_client.users.post(request_body)
             logger.info(f"Created user: {created_user}")
-            #await self.assign_student_roles(created_user.id)
+            await self.assign_student_roles(created_user.id)
             logger.info(f"Assigned roles to user: {created_user.id}")
             return {
                 "username": created_user.user_principal_name,

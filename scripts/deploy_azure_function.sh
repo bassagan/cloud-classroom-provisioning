@@ -5,15 +5,17 @@ set -e
 
 # Function to display usage
 usage() {
-    echo "Usage: $0 --name <function-app-name> --resource-group <resource-group-name>"
+    echo "Usage: $0 --name <function-app-name> --resource-group <resource-group-name> [--remote-build]"
     echo ""
     echo "Options:"
     echo "  --name            Name of the function app (required)"
     echo "  --resource-group  Name of the resource group (required)"
+    echo "  --remote-build    Use remote build on Azure instead of local build"
     exit 1
 }
 
 # Parse command line arguments
+REMOTE_BUILD=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         --name)
@@ -23,6 +25,10 @@ while [[ $# -gt 0 ]]; do
         --resource-group)
             RESOURCE_GROUP="$2"
             shift 2
+            ;;
+        --remote-build)
+            REMOTE_BUILD=true
+            shift
             ;;
         --help)
             usage
@@ -54,15 +60,21 @@ pip install -r requirements.txt
 
 echo "Building and deploying Azure function..."
 
-# Clean up any existing packages
-rm -rf .python_packages
+if [ "$REMOTE_BUILD" = true ]; then
+    echo "Using remote build on Azure..."
+    func azure functionapp publish "$FUNCTION_APP_NAME" --build remote --python
+else
+    echo "Using local build..."
+    # Clean up any existing packages
+    rm -rf .python_packages
 
-# Create the deployment package
-mkdir -p .python_packages/lib/site-packages
-cp -r .venv/lib/python*/site-packages/* .python_packages/lib/site-packages/
+    # Create the deployment package
+    mkdir -p .python_packages/lib/site-packages
+    cp -r .venv/lib/python*/site-packages/* .python_packages/lib/site-packages/
 
-# Deploy using func core tools
-func azure functionapp publish "$FUNCTION_APP_NAME" --build-native-deps --python
+    # Deploy using func core tools
+    func azure functionapp publish "$FUNCTION_APP_NAME" --build-native-deps --python
+fi
 
 echo "Setting up Azure AD permissions..."
 
@@ -123,6 +135,34 @@ az ad app permission admin-consent --id "$APP_CLIENT_ID"
 echo "Assigning RBAC roles..."
 SUBSCRIPTION_ID=$(az account show --query id -o tsv)
 
+# Add role assignments for the app registration
+echo "Adding required role assignments for app registration..."
+# Get the service principal ID using the client ID
+APP_PRINCIPAL_ID=$(az ad sp list --filter "appId eq '$APP_CLIENT_ID'" --query '[0].id' -o tsv)
+
+if [ -z "$APP_PRINCIPAL_ID" ]; then
+    echo "Error: Could not find service principal ID for client ID: $APP_CLIENT_ID"
+    exit 1
+fi
+
+echo "Found service principal ID: $APP_PRINCIPAL_ID"
+
+# Assign Role Based Access Control Administrator
+echo "Assigning RBAC Administrator role..."
+az role assignment create \
+    --assignee "$APP_PRINCIPAL_ID" \
+    --role "Role Based Access Control Administrator" \
+    --scope "/subscriptions/$SUBSCRIPTION_ID" \
+    --only-show-errors || true
+
+# Assign Contributor role
+echo "Assigning Contributor role..."
+az role assignment create \
+    --assignee "$APP_PRINCIPAL_ID" \
+    --role "Contributor" \
+    --scope "/subscriptions/$SUBSCRIPTION_ID" \
+    --only-show-errors || true
+
 # Assign Contributor role to the function app's managed identity
 echo "Assigning Contributor role to function app..."
 az role assignment create \
@@ -161,7 +201,7 @@ az functionapp config appsettings set \
     --settings \
     "AZURE_SUBSCRIPTION_ID=$SUBSCRIPTION_ID" \
     "AZURE_TENANT_ID=$(az account show --query tenantId -o tsv)" \
-    "AZURE_DOMAIN=$(az account show --query user.name -o tsv | cut -d'@' -f2)"
+    "AZURE_DOMAIN=paulabassaganasgmail.onmicrosoft.com"
 
 # Restart the function app to apply changes
 echo "Restarting function app..."
@@ -172,3 +212,49 @@ deactivate
 
 echo "Azure AD permissions and roles setup completed!"
 echo "Deployment completed successfully!"
+
+# Function to handle Azure login
+azure_login() {
+  echo "Logging into Azure..."
+  
+  # Check if already logged in
+  if ! az account show &>/dev/null; then
+    # Get number of tenants
+    TENANT_COUNT=$(az tenant list --query 'length([])' -o tsv 2>/dev/null || echo "0")
+    
+    if [ "$TENANT_COUNT" -eq 1 ]; then
+      # If only one tenant exists, use it directly
+      TENANT_ID=$(az tenant list --query '[0].tenantId' -o tsv)
+      az login --tenant "$TENANT_ID" --only-show-errors
+    else
+      # Regular login if multiple tenants or count couldn't be determined
+      az login
+    fi
+  fi
+  
+  if [ $? -ne 0 ]; then
+    echo "Failed to login to Azure. Please try again."
+    exit 1
+  fi
+  
+  # Get subscription ID
+  SUBSCRIPTION_ID=$(az account show --query id -o tsv)
+  if [ -z "$SUBSCRIPTION_ID" ]; then
+    echo "No subscription found. Please set up a subscription first."
+    exit 1
+  fi
+  
+  # Get tenant ID
+  TENANT_ID=$(az account show --query tenantId -o tsv)
+  if [ -z "$TENANT_ID" ]; then
+    echo "No tenant ID found. Please check your Azure account."
+    exit 1
+  fi
+  
+  # Set the subscription
+  az account set --subscription "$SUBSCRIPTION_ID"
+  
+  # Export the values for Terraform
+  export ARM_SUBSCRIPTION_ID="$SUBSCRIPTION_ID"
+  export ARM_TENANT_ID="$TENANT_ID"
+}
