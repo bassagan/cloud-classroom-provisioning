@@ -165,19 +165,18 @@ create_rbac_roles() {
     echo "ServicePrincipalRole role already exists, skipping..."
   fi
 
-  # Student Console User Role
+  # Student Console User Role - More restricted
   if ! role_exists "StudentConsoleUser"; then
     echo "Creating StudentConsoleUser role..."
     az role definition create --role-definition '{
       "Name": "StudentConsoleUser",
-      "Description": "Allows students to view and manage their assigned resources",
+      "Description": "Basic role for student access",
       "Actions": [
         "Microsoft.Resources/subscriptions/resourceGroups/read",
         "Microsoft.Resources/subscriptions/resourceGroups/resources/read",
         "Microsoft.Web/sites/read",
         "Microsoft.Storage/storageAccounts/read",
-        "Microsoft.KeyVault/vaults/read",
-        "Microsoft.OperationalInsights/workspaces/read"
+        "Microsoft.KeyVault/vaults/read"
       ],
       "NotActions": [
         "Microsoft.Authorization/*/write",
@@ -209,6 +208,67 @@ create_rbac_roles() {
     }'
   fi
 
+  # Function App Management Role
+  if ! role_exists "FunctionAppManagement"; then
+    echo "Creating FunctionAppManagement role..."
+    az role definition create --role-definition '{
+      "Name": "FunctionAppManagement",
+      "Description": "Allows function app to manage users and resources",
+      "Actions": [
+        "Microsoft.Authorization/roleAssignments/read",
+        "Microsoft.Authorization/roleDefinitions/read",
+        "Microsoft.Resources/subscriptions/resourceGroups/read",
+        "Microsoft.Resources/subscriptions/resourceGroups/resources/read",
+        "Microsoft.Web/sites/*",
+        "Microsoft.Storage/storageAccounts/*"
+      ],
+      "AssignableScopes": ["/subscriptions/'$SUBSCRIPTION_ID'"]
+    }'
+  fi
+
+  # Terraform Deployer Role - Limited scope
+  if ! role_exists "TerraformDeployerRole"; then
+    echo "Creating TerraformDeployerRole role..."
+    az role definition create --role-definition '{
+      "Name": "TerraformDeployerRole",
+      "Description": "Limited role for Terraform deployments with restricted permissions",
+      "Actions": [
+        "Microsoft.Resources/subscriptions/resourceGroups/read",
+        "Microsoft.Resources/subscriptions/resourceGroups/write",
+        "Microsoft.Resources/deployments/*",
+        "Microsoft.Storage/storageAccounts/*",
+        "Microsoft.Web/serverfarms/*",
+        "Microsoft.Web/sites/*",
+        "Microsoft.KeyVault/vaults/*",
+        "Microsoft.Network/virtualNetworks/*",
+        "Microsoft.Network/networkSecurityGroups/*",
+        "Microsoft.Network/publicIPAddresses/*",
+        "Microsoft.Compute/virtualMachines/read",
+        "Microsoft.Compute/virtualMachines/write",
+        "Microsoft.Compute/disks/*",
+        "Microsoft.DBforPostgreSQL/servers/*",
+        "Microsoft.ContainerRegistry/registries/*",
+        "Microsoft.ContainerService/managedClusters/*"
+      ],
+      "NotActions": [
+        "Microsoft.Authorization/*/write",
+        "Microsoft.Authorization/*/delete",
+        "Microsoft.Authorization/elevateAccess/Action",
+        "Microsoft.Blueprint/*/write",
+        "Microsoft.Blueprint/*/delete",
+        "Microsoft.Subscription/*",
+        "Microsoft.Authorization/roleDefinitions/*",
+        "Microsoft.Authorization/roleAssignments/*",
+        "Microsoft.Network/virtualNetworks/subnets/join/action"
+      ],
+      "DataActions": [],
+      "NotDataActions": [],
+      "AssignableScopes": ["/subscriptions/'$SUBSCRIPTION_ID'"]
+    }'
+  else
+    echo "TerraformDeployerRole role already exists, skipping..."
+  fi
+
   echo "RBAC roles setup completed!"
 }
 
@@ -217,7 +277,7 @@ destroy_rbac_roles() {
   echo "Destroying RBAC roles..."
   
   # Delete each role
-  for role in "FunctionAppUser" "StorageUser" "EventHubUser" "CosmosDBUser" "CICDUser" "ResourceGroupUser" "ServicePrincipalRole" "StudentConsoleUser" "StudentServicePrincipalRole"; do
+  for role in "FunctionAppUser" "StorageUser" "EventHubUser" "CosmosDBUser" "CICDUser" "ResourceGroupUser" "ServicePrincipalRole" "StudentConsoleUser" "StudentServicePrincipalRole" "FunctionAppManagement" "TerraformDeployerRole"; do
     echo "Deleting role: $role"
     az role definition delete --name "$role" --yes
   done

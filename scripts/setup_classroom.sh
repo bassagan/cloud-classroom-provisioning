@@ -144,16 +144,13 @@ fi
 if [ "$CLOUD_PROVIDER" = "azure" ]; then
   azure_login
   
-  # Setup RBAC roles if requested
-  if [ "$SETUP_RBAC" = true ]; then
-    echo "Setting up Azure RBAC roles..."
-    ./scripts/setup_azure_rbac.sh --create
-  fi
-
-  # Run terraform first
+  # Setup RBAC roles first
+  echo "Setting up Azure RBAC roles..."
+  ./scripts/setup_azure_rbac.sh --create
+  
+  # Then continue with existing Terraform and function deployment
   run_terraform "$ACTION" "iac/azure"
   
-  # Only deploy function if we're not destroying and terraform apply was successful
   if [ "$ACTION" != "destroy" ]; then
     echo "Deploying Azure function..."
     # Get the values directly from terraform outputs

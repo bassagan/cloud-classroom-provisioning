@@ -77,26 +77,6 @@ else
 fi
 
 echo "Setting up Azure AD permissions..."
-
-# Get the function app's managed identity object ID
-FUNCTION_APP_ID=$(az functionapp identity show \
-    --name "$FUNCTION_APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --query principalId -o tsv)
-
-if [ -z "$FUNCTION_APP_ID" ]; then
-    echo "Enabling system-assigned managed identity..."
-    az functionapp identity assign \
-        --name "$FUNCTION_APP_NAME" \
-        --resource-group "$RESOURCE_GROUP"
-    
-    FUNCTION_APP_ID=$(az functionapp identity show \
-        --name "$FUNCTION_APP_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --query principalId -o tsv)
-fi
-
-echo "Adding Azure AD permissions..."
 # Get the Microsoft Graph API service principal ID
 GRAPH_API_ID=$(az ad sp show --id 00000003-0000-0000-c000-000000000000 --query id -o tsv)
 
@@ -130,68 +110,6 @@ az rest --method PATCH \
 # Grant admin consent for the application permission
 echo "Granting admin consent for application permissions..."
 az ad app permission admin-consent --id "$APP_CLIENT_ID"
-
-# Add RBAC roles if not already assigned
-echo "Assigning RBAC roles..."
-SUBSCRIPTION_ID=$(az account show --query id -o tsv)
-
-# Add role assignments for the app registration
-echo "Adding required role assignments for app registration..."
-# Get the service principal ID using the client ID
-APP_PRINCIPAL_ID=$(az ad sp list --filter "appId eq '$APP_CLIENT_ID'" --query '[0].id' -o tsv)
-
-if [ -z "$APP_PRINCIPAL_ID" ]; then
-    echo "Error: Could not find service principal ID for client ID: $APP_CLIENT_ID"
-    exit 1
-fi
-
-echo "Found service principal ID: $APP_PRINCIPAL_ID"
-
-# Assign Role Based Access Control Administrator
-echo "Assigning RBAC Administrator role..."
-az role assignment create \
-    --assignee "$APP_PRINCIPAL_ID" \
-    --role "Role Based Access Control Administrator" \
-    --scope "/subscriptions/$SUBSCRIPTION_ID" \
-    --only-show-errors || true
-
-# Assign Contributor role
-echo "Assigning Contributor role..."
-az role assignment create \
-    --assignee "$APP_PRINCIPAL_ID" \
-    --role "Contributor" \
-    --scope "/subscriptions/$SUBSCRIPTION_ID" \
-    --only-show-errors || true
-
-# Assign Contributor role to the function app's managed identity
-echo "Assigning Contributor role to function app..."
-az role assignment create \
-    --assignee "$FUNCTION_APP_ID" \
-    --role "Contributor" \
-    --scope "/subscriptions/$SUBSCRIPTION_ID/resourceGroups/$RESOURCE_GROUP" \
-    --only-show-errors || true
-
-# Assign Storage Blob Data Owner role to the function app's managed identity
-echo "Assigning Storage Blob Data Owner role to function app..."
-STORAGE_ACCOUNT_NAME=$(az functionapp config appsettings list \
-    --name "$FUNCTION_APP_NAME" \
-    --resource-group "$RESOURCE_GROUP" \
-    --query "[?name=='AzureWebJobsStorage'].value" -o tsv | sed -n 's/.*AccountName=\([^;]*\).*/\1/p')
-
-if [ -z "$STORAGE_ACCOUNT_NAME" ]; then
-    echo "Warning: Could not extract storage account name from connection string"
-else
-    STORAGE_ACCOUNT_ID=$(az storage account show \
-        --name "$STORAGE_ACCOUNT_NAME" \
-        --resource-group "$RESOURCE_GROUP" \
-        --query id -o tsv)
-
-    az role assignment create \
-        --assignee "$FUNCTION_APP_ID" \
-        --role "Storage Blob Data Owner" \
-        --scope "$STORAGE_ACCOUNT_ID" \
-        --only-show-errors || true
-fi
 
 # Set required app settings
 echo "Setting up application settings..."
